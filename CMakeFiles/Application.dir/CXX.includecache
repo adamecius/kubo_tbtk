@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/jgarcia/.local/usr/TBTK/TBTK-BUILD/TBTKApplications/kpm_test/src/main.cpp
+TBTK/FileWriter.h
+/home/jgarcia/.local/usr/TBTK/TBTK-BUILD/TBTKApplications/kpm_test/src/TBTK/FileWriter.h
+TBTK/Model.h
+/home/jgarcia/.local/usr/TBTK/TBTK-BUILD/TBTKApplications/kpm_test/src/TBTK/Model.h
+TBTK/Property/DOS.h
+/home/jgarcia/.local/usr/TBTK/TBTK-BUILD/TBTKApplications/kpm_test/src/TBTK/Property/DOS.h
+TBTK/PropertyExtractor/Diagonalizer.h
+/home/jgarcia/.local/usr/TBTK/TBTK-BUILD/TBTKApplications/kpm_test/src/TBTK/PropertyExtractor/Diagonalizer.h
+TBTK/PropertyExtractor/ChebyshevExpander.h
+/home/jgarcia/.local/usr/TBTK/TBTK-BUILD/TBTKApplications/kpm_test/src/TBTK/PropertyExtractor/ChebyshevExpander.h
+complex
+-
+
