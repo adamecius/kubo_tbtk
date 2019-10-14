@@ -62,12 +62,12 @@ class velocity_operator
 	std::vector<int> get_to_indexes(){
 	};
 
-	int get_num_orbitals(){
+	int getBasisSize(){
 	};
 
 //	sparse_matrix compute_velocity_operator(){
 	KuboSparseMatrix compute_velocity_operator(){
-		int    num_orbs =  get_num_orbitals();
+		int    basisSize =  getBasisSize();
 		std::vector<int>    i_idx =  get_from_indexes();
 		std::vector<int>    j_idx =  get_to_indexes();
 		std::vector<double> Rij = get_from_to_differences();
@@ -79,8 +79,8 @@ class velocity_operator
 		//Convert this data into a SparseMatrix on CSC format
 		SparseMatrix<complex<double>> VijmatSparseMatrix(
 			SparseMatrix<complex<double>>::StorageFormat::CSC,
-			num_orbs,
-			num_orbs
+			basisSize,
+			basisSize
 		);
 		//...
 		KuboSparseMatrix Vijmat(VijmatSparseMatrix);
@@ -89,9 +89,77 @@ class velocity_operator
 	};
 };
 
-void kuboCalculation(const Model &model)
-{
-	//Convert model's hamiltoniano to sparse matrix;
+SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
+	const IndexedDataTree<complex<double>> &indexedDataTree,
+	const Model &model
+){
+	const HoppingAmplitudeSet &hoppingAmplitudeSet
+		= model.getHoppingAmplitudeSet();
+
+	SparseMatrix<complex<double>> sparseMatrix(
+		SparseMatrix<complex<double>>::StorageFormat::CSC,
+		model.getBasisSize(),
+		model.getBasisSize()
+	);
+	for(
+		IndexedDataTree<complex<double>>::ConstIterator iterator
+			= indexedDataTree.cbegin();
+		iterator != indexedDataTree.cend();
+		++iterator
+	){
+		const Index &index = iterator.getCurrentIndex();
+		vector<Index> components = index.split();
+		TBTKAssert(
+			components.size() == 2,
+			"convertOperator()",
+			"Invalid operator index '" << index.toString() << "'."
+			<< " The Index must have two component indices, but"
+			<< " have '" << components.size() << "'.",
+			""
+		);
+		int row = hoppingAmplitudeSet.getBasisIndex(components[0]);
+		int column = hoppingAmplitudeSet.getBasisIndex(components[1]);
+
+		sparseMatrix.add(row, column, *iterator);
+	}
+
+	sparseMatrix.construct();
+
+	return sparseMatrix;
+}
+
+KuboSparseMatrix convertIndexedDataTreeToKuboSparseMatrix(
+	const IndexedDataTree<complex<double>> &indexedDataTree,
+	const Model &model
+){
+	SparseMatrix<complex<double>> sparseMatrix = convertIndexedDataTreeToSparseMatrix(
+		indexedDataTree,
+		model
+	);
+
+	return KuboSparseMatrix(sparseMatrix);
+}
+
+ComplexVector generateRandomPhaseVector(unsigned int basisSize){
+	ComplexVector randomPhaseVector(basisSize);
+	for(int n = 0; n < basisSize; n++){
+		randomPhaseVector[n] = exp(
+			2.0*M_PI*i * (double)rand()/(double)RAND_MAX
+		)/sqrt(basisSize);
+	}
+
+	return randomPhaseVector;
+}
+
+void kuboCalculation(
+	const Model &model,
+	const IndexedDataTree<complex<double>> targetOperator,
+	double bandWidth,
+	double bandCenter,
+	int M0,
+	int M1
+){
+	//Convert the Model into a KuboSparseMatrix.
 	SparseMatrix<complex<double>> sparseHamiltonian
 		= model.getHoppingAmplitudeSet().getSparseMatrix();
 	sparseHamiltonian.setStorageFormat(
@@ -99,44 +167,47 @@ void kuboCalculation(const Model &model)
 	);
 	KuboSparseMatrix H(sparseHamiltonian);
 
-	//Set up these too:
-	KuboSparseMatrix Vx, Op; //The electric field is assume for simplicity in x, therefore Vx
-	//For the conductivity Op = Vx, for other quantities Op is an arbitrary quantum mechanical operator
+	//Extract the basis size.
+	const int basisSize = model.getBasisSize();
 
-	//Define here trace solver. Meaning Tr[ A]. For large systems, stochastic trace approximation is needed.
-	const int num_orbs=1; //The number of sites in the models (including spin and internal degrees of freedom)
-	ComplexVector rphase_vec(num_orbs);
-	for(int n = 0; n < num_orbs; n++){
-		rphase_vec[n] = exp(
-			2.0*M_PI*i * (double)rand()/(double)RAND_MAX
-		)/sqrt( num_orbs );
-	}//With this definition of |phi>, is easy to show that <phi|A|phi> = Tr[A] + random_noise which dissapear for num_orbs--> infty
+	//Convert targetOperator from IndexedDataTree to KuboSparseMatrix.
+	KuboSparseMatrix Op = convertIndexedDataTreeToKuboSparseMatrix(
+		targetOperator,
+		model
+	);
+
+	//TODO: Vx should be calculated independently of Op.
+	KuboSparseMatrix Vx = Op;
+
+	//Generate the random phase vector.
+	ComplexVector randomPhaseVector = generateRandomPhaseVector(basisSize);
 
 	//With this random phase approximation, the code goes as follow
-	double bandWidth,bandCenter; //Extract somehow the BandWidth and BandCenter. Or set it
 	H.self_rescaling( 2.0/bandWidth);
 
 	//Set somewhere the number of coefficients. For this there are two coefficients so one defines a matrix M0xM1
-	const int M0=1, M1=1;
 	std::vector < complex<double> > mu2D(M0*M1);
 
 	//Need five vectors for performing the iteration
-	ComplexVector jLm0(num_orbs), jLm1(num_orbs), jRm0(num_orbs), jRm1(num_orbs), jV(num_orbs);
+	ComplexVector jLm0(basisSize);
+	ComplexVector jLm1(basisSize);
+	ComplexVector jRm0(basisSize);
+	ComplexVector jRm1(basisSize);
+	ComplexVector jV(basisSize);
 
 	//Starts chebyshev iteration
-	jLm0 = Vx*rphase_vec;
+	jLm0 = Vx*randomPhaseVector;
 	jLm1 = H*jLm0;
-	const double shift= -2*bandCenter/bandWidth;
-	for(int  m0= 0; m0 <M0 ; m0++ )
+	const double shift = -2*bandCenter/bandWidth;
+	for(int m0= 0; m0 < M0; m0++)
 	{
-		const complex<double > a=2.0, b  = 1.0;
+		const complex<double > a=2.0, b=1.0;
 		jRm0 = a*(H*jRm1) + b*jRm0;
 		jRm0 = shift*jRm1 + jRm0;	//Can be optimized by implementing operator+=().
 		swap(jRm1, jRm0);
-
-		jRm0 = rphase_vec;
+		jRm0 = randomPhaseVector;
 		jRm1 = H*jRm0;
-		for(int  m1= 0; m1 <M1 ; m1++ )
+		for(int m1 = 0; m1 < M1; m1++)
 		{
 			jLm1 = H*jLm0;
 			jLm0 = a*(H*jLm1) + b*jLm0;
@@ -152,8 +223,8 @@ void kuboCalculation(const Model &model)
 
 int main(int argc, char **argv){
 	//Lattice size
-	const int SIZE_X = 20;
-	const int SIZE_Y = 20;
+	const int SIZE_X = 5;
+	const int SIZE_Y = 5;
 
 	//Parameters
 	complex<double> mu = 0.0;
@@ -192,7 +263,15 @@ int main(int argc, char **argv){
 	//Construct model
 	model.construct();
 
-	kuboCalculation(model);
+	//TODO: Generate a proper operator here.
+	IndexedDataTree<complex<double>> customOperator;
+	customOperator.add(1, {{1, 1, 0}, {2, 1, 0}});
+
+	const double BAND_WIDTH = 5;
+	const double BAND_CENTER = 0;
+	const int M0=1;
+	const int M1=1;
+	kuboCalculation(model, customOperator, BAND_WIDTH, BAND_CENTER, M0, M1);
 
 	return 0;
 }

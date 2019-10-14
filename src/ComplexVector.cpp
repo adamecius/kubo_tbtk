@@ -59,6 +59,8 @@ ComplexVector::~ComplexVector(){
 ComplexVector& ComplexVector::operator=(const ComplexVector &rhs){
 	if(this != &rhs){
 		size = rhs.size;
+		if(data != nullptr)
+			delete [] data;
 		data = new complex<double>[size];
 		for(unsigned int n = 0; n < size; n++)
 			data[n] = rhs.data[n];

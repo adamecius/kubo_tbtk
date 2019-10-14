@@ -63,7 +63,7 @@ ComplexVector KuboSparseMatrix::operator*(const ComplexVector &rhs){
 	for(unsigned int n = 0; n < numRows; n++)
 		result[n] = 0;
 
-	for(unsigned int column = 0; column < columnPointers.size(); column++){
+	for(unsigned int column = 0; column < columnPointers.size()-1; column++){
 		unsigned int start = columnPointers[column];
 		unsigned int end = columnPointers[column+1];
 		for(unsigned int n = start; n < end; n++){
