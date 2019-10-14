@@ -26,6 +26,10 @@
 #include "TBTK/Property/DOS.h"
 #include "TBTK/PropertyExtractor/Diagonalizer.h"
 #include "TBTK/PropertyExtractor/ChebyshevExpander.h"
+
+#include "ComplexVector.h"
+#include "KuboSparseMatrix.h"
+
 #include <complex>
 
 using namespace std;
@@ -33,62 +37,14 @@ using namespace TBTK;
 
 const complex<double> i(0, 1);
 
-complex<double> dot(
-	const std::vector<complex<double>>& x,
-	const std::vector<complex<double>>& y
-){
-	return 0;
-}; //swap vectors by reference and not by copy
-
 void swap(
-	std::vector<complex<double>>& x,
-	std::vector<complex<double>>& y
+	ComplexVector& x,
+	ComplexVector& y
 ){
+	ComplexVector temp = std::move(x);
+	x = std::move(y);
+	y = std::move(temp);
 }; //swap vectors by reference and not by copy
-
-void axpy(
-	const complex<double>& a,
-	std::vector<complex<double>>& x,
-	std::vector<complex<double>>& y
-){
-}; //PErform the operation y= ax+ y
-
-//A sparse matrix class needed to perform matrix-vector multiplication
-class sparse_matrix{
-	typedef complex<double> my_complex;
-	typedef std::vector<complex<double> > my_complex_vec;
-public:
-	sparse_matrix(){};
-
-	sparse_matrix(
-		const  std::vector<int> rows,
-		const  std::vector<int> cols,
-		const my_complex_vec vals,
-		const int dim0,
-		const int dim1
-	){
-	};
-
-	void spMVmult(
-		const my_complex_vec& x,
-		const my_complex_vec& y
-	){
-	}; //return y = A x
-
-	void axpby(
-		const my_complex &a,
-		const my_complex_vec& x,
-		const my_complex& b,
-		my_complex_vec& y
-	){
-	}; //return y = a 1A x + b y
-
-	void self_rescaling(const my_complex a){
-	}; // perform the transformation A ---> a A
-
-	void self_rescaling(const double a){
-	}; // perform the transformation A ---> a A
-};
 
 //The velocity operator is essential to compute any nonequilibrium property.
 //In a real-space tight-binding formulation it can be easily computed as V = i [ H, X] = H_{ij} ( R_i - R_j );
@@ -109,7 +65,8 @@ class velocity_operator
 	int get_num_orbitals(){
 	};
 
-	sparse_matrix compute_velocity_operator(){
+//	sparse_matrix compute_velocity_operator(){
+	KuboSparseMatrix compute_velocity_operator(){
 		int    num_orbs =  get_num_orbitals();
 		std::vector<int>    i_idx =  get_from_indexes();
 		std::vector<int>    j_idx =  get_to_indexes();
@@ -121,7 +78,13 @@ class velocity_operator
 			Vij[i] = I*Vij[i]*Rij[i];
 
 		//Convert this data into a COO matrix format
-		sparse_matrix Vijmat( i_idx, j_idx, Vij, num_orbs ,num_orbs);
+//		sparse_matrix Vijmat( i_idx, j_idx, Vij, num_orbs ,num_orbs);
+		SparseMatrix<complex<double>> VijmatSparseMatrix(
+			SparseMatrix<complex<double>>::StorageFormat::CSC,
+			num_orbs,
+			num_orbs
+		);
+		KuboSparseMatrix Vijmat(VijmatSparseMatrix);
 
 		return Vijmat;
 	};
@@ -130,12 +93,12 @@ class velocity_operator
 void kuboCalculation(const Model &model)
 {
 	//Convert model's hamiltoniano to sparse matrix;
-	sparse_matrix H, Vx, Op; //The electric field is assume for simplicity in x, therefore Vx
+	KuboSparseMatrix H, Vx, Op; //The electric field is assume for simplicity in x, therefore Vx
 	//For the conductivity Op = Vx, for other quantities Op is an arbitrary quantum mechanical operator
 
 	//Define here trace solver. Meaning Tr[ A]. For large systems, stochastic trace approximation is needed.
 	const int num_orbs=1; //The number of sites in the models (including spin and internal degrees of freedom)
-	std::vector<complex<double> >rphase_vec( num_orbs);
+	ComplexVector rphase_vec(num_orbs);
 	complex<double> I(0,1);
 	for(int i = 0; i < num_orbs; i++){
 		rphase_vec[i] = exp(
@@ -152,29 +115,30 @@ void kuboCalculation(const Model &model)
 	std::vector < complex<double> > mu2D(M0*M1);
 
 	//Need five vectors for performing the iteration
-	std::vector<complex<double>> jLm0(num_orbs), jLm1(num_orbs), jRm0(num_orbs), jRm1(num_orbs), jV(num_orbs);
+	ComplexVector jLm0(num_orbs), jLm1(num_orbs), jRm0(num_orbs), jRm1(num_orbs), jV(num_orbs);
 
 	//Starts chebyshev iteration
-	Vx.spMVmult(rphase_vec, jLm0);
-	H.spMVmult(jLm0, jLm1);
+	jLm0 = Vx*rphase_vec;
+	jLm1 = H*jLm0;
 	const double shift= -2*bandCenter/bandWidth;
 	for(int  m0= 0; m0 <M0 ; m0++ )
 	{
 		const complex<double > a=2.0, b  = 1.0;
-		H.axpby(a,jRm1,b,jRm0);
-		axpy(shift, jRm1 , jRm0);
+		jRm0 = a*(H*jRm1) + b*jRm0;
+		jRm0 = shift*jRm1 + jRm0;
 		swap ( jRm1, jRm0 );
 
 		jRm0 = rphase_vec;
-		H.spMVmult(jRm0, jRm1);
+		jRm1 = H*jRm0;
 		for(int  m1= 0; m1 <M1 ; m1++ )
 		{
-			H.spMVmult(jLm0, jLm1);
-			H.axpby(a,jLm1,b,jLm0);
-			axpy(shift, jLm1 , jLm0);
+			jLm1 = H*jLm0;
+			jLm0 = a*(H*jLm1) + b*jLm0;
+			jLm0 = shift*jLm1 + jLm0;
 			swap ( jLm1, jLm0 );
-			Op.spMVmult(jLm0, jV);
-			mu2D[ m0*M1 + m1 ] = dot( jV,jRm0 );
+			jV = Op*jLm0;
+			mu2D[m0*M1 + m1]
+				= ComplexVector::dotProduct(jV, jRm0);
 		}
 	}
 

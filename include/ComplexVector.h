@@ -100,6 +100,11 @@ public:
 		const ComplexVector &rhs
 	);
 
+	/** Get the size of the ComplexVector.
+	 *
+	 *  @return The size of the ComplexVector. */
+	unsigned int getSize() const;
+
 	/** Get a std::vector<double> representation of the vector. */
 	const std::vector<std::complex<double>> getStdVector() const;
 
@@ -231,6 +236,10 @@ inline std::complex<double> ComplexVector::dotProduct(
 		dp += conj(lhs.data[n])*rhs.data[n];
 
 	return dp;
+}
+
+inline unsigned int ComplexVector::getSize() const{
+	return size;
 }
 
 inline const std::vector<std::complex<double>> ComplexVector::getStdVector() const{
