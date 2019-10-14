@@ -37,7 +37,7 @@ KuboSparseMatrix::KuboSparseMatrix(
 
 	const unsigned int *columnPointers
 		= sparseMatrix.getCSCColumnPointers();
-	for(unsigned int n = 0; n < numColumns; n++)
+	for(unsigned int n = 0; n < numColumns+1; n++)
 		this->columnPointers.push_back(columnPointers[n]);
 
 	const unsigned int *rows = sparseMatrix.getCSCRows();
@@ -60,8 +60,16 @@ ComplexVector KuboSparseMatrix::operator*(const ComplexVector &rhs){
 	);
 
 	ComplexVector result(numRows);
-	for(unsigned int column = 0; column < numColumns; column++){
-		TBTKNotYetImplemented("KuboSparseMatrix::operator*()");
+	for(unsigned int n = 0; n < numRows; n++)
+		result[n] = 0;
+
+	for(unsigned int column = 0; column < columnPointers.size(); column++){
+		unsigned int start = columnPointers[column];
+		unsigned int end = columnPointers[column+1];
+		for(unsigned int n = start; n < end; n++){
+			unsigned int row = rows[n];
+			result[row] += values[n]*rhs[column];
+		}
 	}
 
 	return result;

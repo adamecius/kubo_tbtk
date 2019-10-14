@@ -73,17 +73,16 @@ class velocity_operator
 		std::vector<double> Rij = get_from_to_differences();
 		std::vector<complex<double> >  Vij = get_from_to_amplitudes();
 
-		complex<double> I(0,1);
-		for( int i = 0; i < Vij.size(); i++ )
-			Vij[i] = I*Vij[i]*Rij[i];
+		for( int n = 0; n < Vij.size(); n++ )
+			Vij[n] = i*Vij[n]*Rij[n];
 
-		//Convert this data into a COO matrix format
-//		sparse_matrix Vijmat( i_idx, j_idx, Vij, num_orbs ,num_orbs);
+		//Convert this data into a SparseMatrix on CSC format
 		SparseMatrix<complex<double>> VijmatSparseMatrix(
 			SparseMatrix<complex<double>>::StorageFormat::CSC,
 			num_orbs,
 			num_orbs
 		);
+		//...
 		KuboSparseMatrix Vijmat(VijmatSparseMatrix);
 
 		return Vijmat;
@@ -93,16 +92,21 @@ class velocity_operator
 void kuboCalculation(const Model &model)
 {
 	//Convert model's hamiltoniano to sparse matrix;
-	KuboSparseMatrix H, Vx, Op; //The electric field is assume for simplicity in x, therefore Vx
+	SparseMatrix<complex<double>> sparseHamiltonian
+		= model.getHoppingAmplitudeSet().getSparseMatrix();
+	sparseHamiltonian.setStorageFormat(SparseMatrix<complex<double>>::StorageFormat::CSC);
+	KuboSparseMatrix H(sparseHamiltonian);
+
+	//Set up these too:
+	KuboSparseMatrix Vx, Op; //The electric field is assume for simplicity in x, therefore Vx
 	//For the conductivity Op = Vx, for other quantities Op is an arbitrary quantum mechanical operator
 
 	//Define here trace solver. Meaning Tr[ A]. For large systems, stochastic trace approximation is needed.
 	const int num_orbs=1; //The number of sites in the models (including spin and internal degrees of freedom)
 	ComplexVector rphase_vec(num_orbs);
-	complex<double> I(0,1);
-	for(int i = 0; i < num_orbs; i++){
-		rphase_vec[i] = exp(
-			2.0*M_PI*I * (double)rand()/(double)RAND_MAX
+	for(int n = 0; n < num_orbs; n++){
+		rphase_vec[n] = exp(
+			2.0*M_PI*i * (double)rand()/(double)RAND_MAX
 		)/sqrt( num_orbs );
 	}//With this definition of |phi>, is easy to show that <phi|A|phi> = Tr[A] + random_noise which dissapear for num_orbs--> infty
 
@@ -125,8 +129,8 @@ void kuboCalculation(const Model &model)
 	{
 		const complex<double > a=2.0, b  = 1.0;
 		jRm0 = a*(H*jRm1) + b*jRm0;
-		jRm0 = shift*jRm1 + jRm0;
-		swap ( jRm1, jRm0 );
+		jRm0 = shift*jRm1 + jRm0;	//Can be optimized by implementing operator+=().
+		swap(jRm1, jRm0);
 
 		jRm0 = rphase_vec;
 		jRm1 = H*jRm0;
@@ -134,17 +138,15 @@ void kuboCalculation(const Model &model)
 		{
 			jLm1 = H*jLm0;
 			jLm0 = a*(H*jLm1) + b*jLm0;
-			jLm0 = shift*jLm1 + jLm0;
-			swap ( jLm1, jLm0 );
+			jLm0 = shift*jLm1 + jLm0;	//Can be optimized by implementing operator+=().
+			swap(jLm1, jLm0);
 			jV = Op*jLm0;
-			mu2D[m0*M1 + m1]
-				= ComplexVector::dotProduct(jV, jRm0);
+			mu2D[m0*M1 + m1] = ComplexVector::dotProduct(jV, jRm0);
 		}
 	}
 
 	//postprocess moments
 };
-
 
 int main(int argc, char **argv){
 	//Lattice size
