@@ -94,7 +94,9 @@ void kuboCalculation(const Model &model)
 	//Convert model's hamiltoniano to sparse matrix;
 	SparseMatrix<complex<double>> sparseHamiltonian
 		= model.getHoppingAmplitudeSet().getSparseMatrix();
-	sparseHamiltonian.setStorageFormat(SparseMatrix<complex<double>>::StorageFormat::CSC);
+	sparseHamiltonian.setStorageFormat(
+		SparseMatrix<complex<double>>::StorageFormat::CSC
+	);
 	KuboSparseMatrix H(sparseHamiltonian);
 
 	//Set up these too:
