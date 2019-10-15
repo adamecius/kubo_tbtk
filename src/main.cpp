@@ -247,19 +247,19 @@ void kuboCalculation(
 	const double shift = -2*bandCenter/bandWidth;
 	for(int m0 = 0; m0 < M0; m0++){
 		const complex<double > a=2.0, b=1.0;
-		jRm0 = a*(H*jRm1) + b*jRm0;
-		jRm0 = shift*jRm1 + jRm0;	//Can be optimized by implementing operator+=().
-		swap(jRm1, jRm0);
 		jRm0 = randomPhaseVector;
 		jRm1 = H*jRm0;
 		for(int m1 = 0; m1 < M1; m1++){
-			jLm1 = H*jLm0;
-			jLm0 = a*(H*jLm1) + b*jLm0;
-			jLm0 = shift*jLm1 + jLm0;	//Can be optimized by implementing operator+=().
-			swap(jLm1, jLm0);
 			jV = Op*jLm0;
 			mu2D[m0*M1 + m1] = ComplexVector::dotProduct(jV, jRm0);
+
+			jLm0 = a*(H*jLm1) + b*jLm0;
+			jLm0 = shift*jLm1 + jLm0;
+			swap(jLm1, jLm0);
 		}
+		jLm0 = a*(H*jLm1) + b*jLm0;
+		jLm0 = shift*jLm1 + jLm0;
+		swap(jLm1, jLm0);
 	}
 
 	//postprocess moments
