@@ -37,14 +37,11 @@ using namespace TBTK;
 
 const complex<double> i(0, 1);
 
-void swap(
-	ComplexVector& x,
-	ComplexVector& y
-){
+void swap(ComplexVector& x, ComplexVector& y){
 	ComplexVector temp = std::move(x);
 	x = std::move(y);
 	y = std::move(temp);
-}; //swap vectors by reference and not by copy
+};
 
 //The velocity operator is essential to compute any nonequilibrium property.
 //In a real-space tight-binding formulation it can be easily computed as V = i [ H, X] = H_{ij} ( R_i - R_j );
@@ -88,6 +85,16 @@ class velocity_operator
 		return Vijmat;
 	};
 };
+
+KuboSparseMatrix convertModelToKuboSparseMatrix(const Model &model){
+	SparseMatrix<complex<double>> sparseHamiltonian
+		= model.getHoppingAmplitudeSet().getSparseMatrix();
+	sparseHamiltonian.setStorageFormat(
+		SparseMatrix<complex<double>>::StorageFormat::CSC
+	);
+
+	return KuboSparseMatrix(sparseHamiltonian);
+}
 
 SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 	const IndexedDataTree<complex<double>> &indexedDataTree,
@@ -160,12 +167,7 @@ void kuboCalculation(
 	int M1
 ){
 	//Convert the Model into a KuboSparseMatrix.
-	SparseMatrix<complex<double>> sparseHamiltonian
-		= model.getHoppingAmplitudeSet().getSparseMatrix();
-	sparseHamiltonian.setStorageFormat(
-		SparseMatrix<complex<double>>::StorageFormat::CSC
-	);
-	KuboSparseMatrix H(sparseHamiltonian);
+	KuboSparseMatrix H = convertModelToKuboSparseMatrix(model);
 
 	//Extract the basis size.
 	const int basisSize = model.getBasisSize();
@@ -186,7 +188,7 @@ void kuboCalculation(
 	H.self_rescaling( 2.0/bandWidth);
 
 	//Set somewhere the number of coefficients. For this there are two coefficients so one defines a matrix M0xM1
-	std::vector < complex<double> > mu2D(M0*M1);
+	std::vector<complex<double>> mu2D(M0*M1);
 
 	//Need five vectors for performing the iteration
 	ComplexVector jLm0(basisSize);
@@ -199,16 +201,14 @@ void kuboCalculation(
 	jLm0 = Vx*randomPhaseVector;
 	jLm1 = H*jLm0;
 	const double shift = -2*bandCenter/bandWidth;
-	for(int m0= 0; m0 < M0; m0++)
-	{
+	for(int m0 = 0; m0 < M0; m0++){
 		const complex<double > a=2.0, b=1.0;
 		jRm0 = a*(H*jRm1) + b*jRm0;
 		jRm0 = shift*jRm1 + jRm0;	//Can be optimized by implementing operator+=().
 		swap(jRm1, jRm0);
 		jRm0 = randomPhaseVector;
 		jRm1 = H*jRm0;
-		for(int m1 = 0; m1 < M1; m1++)
-		{
+		for(int m1 = 0; m1 < M1; m1++){
 			jLm1 = H*jLm0;
 			jLm0 = a*(H*jLm1) + b*jLm0;
 			jLm0 = shift*jLm1 + jLm0;	//Can be optimized by implementing operator+=().
@@ -223,8 +223,8 @@ void kuboCalculation(
 
 int main(int argc, char **argv){
 	//Lattice size
-	const int SIZE_X = 5;
-	const int SIZE_Y = 5;
+	const int SIZE_X = 20;
+	const int SIZE_Y = 20;
 
 	//Parameters
 	complex<double> mu = 0.0;
