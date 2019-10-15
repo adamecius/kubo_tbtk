@@ -124,21 +124,22 @@ void kuboCalculation(const Model &model)
 	for(int  m0= 0; m0 <M0 ; m0++ )
 	{
 		const complex<double > a=2.0, b  = 1.0;
-		H.axpby(a,jRm1,b,jRm0);
-		axpy(shift, jRm1 , jRm0);
-		swap ( jRm1, jRm0 );
 		
 		jRm0 = rphase_vec;
 		H.spMVmult(jRm0, jRm1);
 		for(int  m1= 0; m1 <M1 ; m1++ )
 		{
-			H.spMVmult(jLm0, jLm1);
+			Op.spMVmult(jLm0, jV);
+			mu2D[ m0*M1 + m1 ] = dot( jV,jRm0 );
+
 			H.axpby(a,jLm1,b,jLm0);
 			axpy(shift, jLm1 , jLm0);
 			swap ( jLm1, jLm0 );
-			Op.spMVmult(jLm0, jV);
-			mu2D[ m0*M1 + m1 ] = dot( jV,jRm0 );
 		}
+		H.axpby(a,jLm1,b,jLm0);
+		axpy(shift, jLm1 , jLm0);
+		swap ( jLm1, jLm0 );
+		
 	}
 	
 	//postprocess moments
