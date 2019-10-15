@@ -75,4 +75,9 @@ ComplexVector KuboSparseMatrix::operator*(const ComplexVector &rhs){
 	return result;
 }
 
+void KuboSparseMatrix::rescale(const complex<double> &scaleFactor){
+	for(unsigned int n = 0; n < values.size(); n++)
+		values[n] *= scaleFactor;
+}
+
 };	//End of namespace TBTK

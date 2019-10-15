@@ -26,6 +26,7 @@
 #include "TBTK/Property/DOS.h"
 #include "TBTK/PropertyExtractor/Diagonalizer.h"
 #include "TBTK/PropertyExtractor/ChebyshevExpander.h"
+#include "TBTK/Vector3d.h"
 
 #include "ComplexVector.h"
 #include "KuboSparseMatrix.h"
@@ -43,48 +44,78 @@ void swap(ComplexVector& x, ComplexVector& y){
 	y = std::move(temp);
 };
 
-//The velocity operator is essential to compute any nonequilibrium property.
-//In a real-space tight-binding formulation it can be easily computed as V = i [ H, X] = H_{ij} ( R_i - R_j );
-class velocity_operator
-{
-	std::vector<double> get_from_to_differences(){
-	}; //Get the difference from sites inital sities to final sites. Without periodic boundary conditions
+IndexedDataTree<complex<double>> generateVelocityOperator(
+	const Model &model,
+	const Vector3d &direction
+){
+	//Get the Geometry from the model.
+	const Geometry *geometry = model.getGeometry();
+	TBTKAssert(
+		geometry != nullptr,
+		"generateVelocityOperator()",
+		"The model contains no Geometry.",
+		"Use model.createGeometry() to create a geometry and"
+		<< " geometry->setCoordinates() to set the coordinates."
+	);
+	TBTKAssert(
+		geometry->getDimensions() == 3,
+		"generateVelocityOperator()",
+		"The geometry dimension must have dimension '3' but has"
+		<< " dimension '" << geometry->getDimensions() << "'.",
+		""
+	);
 
-	std::vector<complex<double> > get_from_to_amplitudes(){
-	}; //Get the amplitudes from sites inital sities to final sites. Without periodic boundary conditions
+	//Create the velocity operator.
+	IndexedDataTree<complex<double>> velocityOperator;
 
-	std::vector<int> get_from_indexes(){
-	};
+	//Iterate over all HoppingAmplitudes.
+	const HoppingAmplitudeSet &hoppingAmplitudeSet
+		= model.getHoppingAmplitudeSet();
+	for(
+		HoppingAmplitudeSet::ConstIterator iterator
+			= hoppingAmplitudeSet.cbegin();
+		iterator != hoppingAmplitudeSet.cend();
+		++iterator
+	){
+		//Get the amplitude, to-, and from-Indices.
+		complex<double> amplitude = (*iterator).getAmplitude();
+		const Index to = (*iterator).getToIndex();
+		const Index from = (*iterator).getFromIndex();
 
-	std::vector<int> get_to_indexes(){
-	};
-
-	int getBasisSize(){
-	};
-
-//	sparse_matrix compute_velocity_operator(){
-	KuboSparseMatrix compute_velocity_operator(){
-		int    basisSize =  getBasisSize();
-		std::vector<int>    i_idx =  get_from_indexes();
-		std::vector<int>    j_idx =  get_to_indexes();
-		std::vector<double> Rij = get_from_to_differences();
-		std::vector<complex<double> >  Vij = get_from_to_amplitudes();
-
-		for( int n = 0; n < Vij.size(); n++ )
-			Vij[n] = i*Vij[n]*Rij[n];
-
-		//Convert this data into a SparseMatrix on CSC format
-		SparseMatrix<complex<double>> VijmatSparseMatrix(
-			SparseMatrix<complex<double>>::StorageFormat::CSC,
-			basisSize,
-			basisSize
+		//Get the coordinates corresponding to the to- and from-Indices
+		//and vonvert them to Vector3d.
+		const double *toCoordinates = geometry->getCoordinates(to);
+		Vector3d toR = Vector3d(
+			{toCoordinates[0], toCoordinates[1], toCoordinates[2]}
 		);
-		//...
-		KuboSparseMatrix Vijmat(VijmatSparseMatrix);
+		const double *fromCoordinates = geometry->getCoordinates(from);
+		Vector3d fromR = Vector3d(
+			{fromCoordinates[0], fromCoordinates[1], fromCoordinates[2]}
+		);
 
-		return Vijmat;
-	};
-};
+		//Calculate H_{ij}(direction.(R_i - R_j)).
+		complex<double> operatorValue = amplitude*Vector3d::dotProduct(
+			direction,
+			toR - fromR
+		);
+
+		//Avoid adding elements that are identically zero.
+		if(fabs(operatorValue) == 0)
+			continue;
+
+		//Add the value to the velocity operator.
+		try{
+			//Try to add it to an already existing entry.
+			velocityOperator.get({to, from}) += operatorValue;
+		}
+		catch(ElementNotFoundException e){
+			//Create a new entry if it fails.
+			velocityOperator.add(operatorValue, {to, from});
+		}
+	}
+
+	return velocityOperator;
+}
 
 KuboSparseMatrix convertModelToKuboSparseMatrix(const Model &model){
 	SparseMatrix<complex<double>> sparseHamiltonian
@@ -100,21 +131,30 @@ SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 	const IndexedDataTree<complex<double>> &indexedDataTree,
 	const Model &model
 ){
+	//Get the HoppingAmplitudeSet.
 	const HoppingAmplitudeSet &hoppingAmplitudeSet
 		= model.getHoppingAmplitudeSet();
 
+	//Create the resulting SparseMatrix.
 	SparseMatrix<complex<double>> sparseMatrix(
 		SparseMatrix<complex<double>>::StorageFormat::CSC,
 		model.getBasisSize(),
 		model.getBasisSize()
 	);
+
+	//Iterate over all elements in the IndexedDataTree.
 	for(
 		IndexedDataTree<complex<double>>::ConstIterator iterator
 			= indexedDataTree.cbegin();
 		iterator != indexedDataTree.cend();
 		++iterator
 	){
+		//Get the Index of the current element.
 		const Index &index = iterator.getCurrentIndex();
+
+		//Split Indices such as {{x, y, s}, {x', y', s'}} into the two
+		//components {x, y, s} and {x', y', s'}. Assert that two
+		//components are obtained.
 		vector<Index> components = index.split();
 		TBTKAssert(
 			components.size() == 2,
@@ -124,12 +164,17 @@ SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 			<< " have '" << components.size() << "'.",
 			""
 		);
+
+		//Convert the two components (the to- and fromIndices) to their
+		//corresponding linear Hilbert space indices.
 		int row = hoppingAmplitudeSet.getBasisIndex(components[0]);
 		int column = hoppingAmplitudeSet.getBasisIndex(components[1]);
 
+		//Add te element to the SparseMatrix.
 		sparseMatrix.add(row, column, *iterator);
 	}
 
+	//Construct the SparseMatrix internal CSC representation.
 	sparseMatrix.construct();
 
 	return sparseMatrix;
@@ -139,17 +184,18 @@ KuboSparseMatrix convertIndexedDataTreeToKuboSparseMatrix(
 	const IndexedDataTree<complex<double>> &indexedDataTree,
 	const Model &model
 ){
-	SparseMatrix<complex<double>> sparseMatrix = convertIndexedDataTreeToSparseMatrix(
-		indexedDataTree,
-		model
-	);
+	SparseMatrix<complex<double>> sparseMatrix
+		= convertIndexedDataTreeToSparseMatrix(
+			indexedDataTree,
+			model
+		);
 
 	return KuboSparseMatrix(sparseMatrix);
 }
 
 ComplexVector generateRandomPhaseVector(unsigned int basisSize){
 	ComplexVector randomPhaseVector(basisSize);
-	for(int n = 0; n < basisSize; n++){
+	for(unsigned int n = 0; n < basisSize; n++){
 		randomPhaseVector[n] = exp(
 			2.0*M_PI*i * (double)rand()/(double)RAND_MAX
 		)/sqrt(basisSize);
@@ -168,6 +214,7 @@ void kuboCalculation(
 ){
 	//Convert the Model into a KuboSparseMatrix.
 	KuboSparseMatrix H = convertModelToKuboSparseMatrix(model);
+	H.rescale(2.0/bandWidth);
 
 	//Extract the basis size.
 	const int basisSize = model.getBasisSize();
@@ -184,10 +231,7 @@ void kuboCalculation(
 	//Generate the random phase vector.
 	ComplexVector randomPhaseVector = generateRandomPhaseVector(basisSize);
 
-	//With this random phase approximation, the code goes as follow
-	H.self_rescaling( 2.0/bandWidth);
-
-	//Set somewhere the number of coefficients. For this there are two coefficients so one defines a matrix M0xM1
+	//Create the result.
 	std::vector<complex<double>> mu2D(M0*M1);
 
 	//Need five vectors for performing the iteration
@@ -263,10 +307,26 @@ int main(int argc, char **argv){
 	//Construct model
 	model.construct();
 
-	//TODO: Generate a proper operator here.
-	IndexedDataTree<complex<double>> customOperator;
-	customOperator.add(1, {{1, 1, 0}, {2, 1, 0}});
+	//Set up the geometry.
+	model.createGeometry(3);
+	Geometry *geometry = model.getGeometry();
+	for(int x = 0; x < SIZE_X; x++){
+		for(int y = 0; y < SIZE_Y; y++){
+			for(int s = 0; s < 2; s++){
+				geometry->setCoordinates(
+					{x, y, s},
+					{(double)x, (double)y, 0}
+				);
+			}
+		}
+	}
 
+	//Generate the operator. The second argument is the direction of
+	//interest.
+	IndexedDataTree<complex<double>> customOperator
+		= generateVelocityOperator(model, {1, 0, 0});
+
+	//Run the calculation.
 	const double BAND_WIDTH = 5;
 	const double BAND_CENTER = 0;
 	const int M0=1;

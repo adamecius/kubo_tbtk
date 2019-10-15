@@ -43,11 +43,7 @@ public:
 
 	ComplexVector operator*(const ComplexVector &rhs);
 
-	void self_rescaling(const my_complex a){
-	}; // perform the transformation A ---> a A
-
-	void self_rescaling(const double a){
-	}; // perform the transformation A ---> a A
+	void rescale(const std::complex<double> &scaleFactor);
 private:
 	unsigned int numRows;
 	unsigned int numColumns;
