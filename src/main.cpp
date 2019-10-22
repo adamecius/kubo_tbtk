@@ -71,17 +71,15 @@ IndexedDataTree<complex<double>> generateVelocityOperator(
 	//Iterate over all HoppingAmplitudes.
 	const HoppingAmplitudeSet &hoppingAmplitudeSet
 		= model.getHoppingAmplitudeSet();
-	for(
-		HoppingAmplitudeSet::ConstIterator iterator
-			= hoppingAmplitudeSet.cbegin();
-		iterator != hoppingAmplitudeSet.cend();
-		++iterator
-	){
+	for( HoppingAmplitudeSet::ConstIterator iterator = hoppingAmplitudeSet.cbegin();
+		 iterator != hoppingAmplitudeSet.cend();
+		 ++iterator)
+	{
 		//Get the amplitude, to-, and from-Indices.
 		complex<double> amplitude = (*iterator).getAmplitude();
 		const Index to = (*iterator).getToIndex();
 		const Index from = (*iterator).getFromIndex();
-
+		
 		//Get the coordinates corresponding to the to- and from-Indices
 		//and vonvert them to Vector3d.
 		const double *toCoordinates = geometry->getCoordinates(to);
@@ -94,7 +92,8 @@ IndexedDataTree<complex<double>> generateVelocityOperator(
 		);
 
 		//Calculate H_{ij}(direction.(R_i - R_j)).
-		complex<double> operatorValue = amplitude*Vector3d::dotProduct(
+		complex<double> i(0,1);
+		complex<double> operatorValue =-i*amplitude*Vector3d::dotProduct( //FIXED lack of i. 
 			direction,
 			toR - fromR
 		);
@@ -118,6 +117,7 @@ IndexedDataTree<complex<double>> generateVelocityOperator(
 }
 
 KuboSparseMatrix convertModelToKuboSparseMatrix(const Model &model){
+	
 	SparseMatrix<complex<double>> sparseHamiltonian
 		= model.getHoppingAmplitudeSet().getSparseMatrix();
 	sparseHamiltonian.setStorageFormat(
@@ -172,6 +172,7 @@ SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 
 		//Add te element to the SparseMatrix.
 		sparseMatrix.add(row, column, *iterator);
+		std::cout<<row<<" "<<column<<" "<<*iterator<<std::endl;
 	}
 
 	//Construct the SparseMatrix internal CSC representation.
@@ -213,8 +214,8 @@ void kuboCalculation(
 	int M1
 ){
 	//Convert the Model into a KuboSparseMatrix.
-	KuboSparseMatrix H = convertModelToKuboSparseMatrix(model);
-	H.rescale(2.0/bandWidth);
+	KuboSparseMatrix H = convertModelToKuboSparseMatrix(model); H.print(); //Check this, very good.	
+	H.rescale(2.0/bandWidth); H.print(); //Check this, very good.	
 
 	//Extract the basis size.
 	const int basisSize = model.getBasisSize();
@@ -226,7 +227,7 @@ void kuboCalculation(
 	);
 
 	//TODO: Vx should be calculated independently of Op.
-	KuboSparseMatrix Vx = Op;
+	KuboSparseMatrix Vx = Op; Vx.print(); //Check this, very good.	
 
 	//Generate the random phase vector.
 	ComplexVector randomPhaseVector = generateRandomPhaseVector(basisSize);
@@ -245,14 +246,15 @@ void kuboCalculation(
 	jLm0 = Vx*randomPhaseVector;
 	jLm1 = H*jLm0;
 	const double shift = -2*bandCenter/bandWidth;
-	for(int m0 = 0; m0 < M0; m0++){
-		const complex<double > a=2.0, b=1.0;
+	for(int m0 = 0; m0 < M0; m0++)
+	{
+		const complex<double > a=2.0, b=-1.0;
 		jRm0 = randomPhaseVector;
 		jRm1 = H*jRm0;
 		for(int m1 = 0; m1 < M1; m1++){
 			jV = Op*jLm0;
 			mu2D[m0*M1 + m1] = ComplexVector::dotProduct(jV, jRm0);
-
+			std::cout<<mu2D[m0*M1 + m1]<<std::endl;
 			jLm0 = a*(H*jLm1) + b*jLm0;
 			jLm0 = shift*jLm1 + jLm0;
 			swap(jLm1, jLm0);
@@ -265,72 +267,44 @@ void kuboCalculation(
 	//postprocess moments
 };
 
-int main(int argc, char **argv){
+//As an example, let's compute the chebyshev moments of the one dimensional linear chain.
+
+int main(int argc, char **argv)
+{
 	//Lattice size
-	const int SIZE_X = 20;
-	const int SIZE_Y = 20;
+	const int SIZE_X = 100;
 
 	//Parameters
-	complex<double> mu = 0.0;
-	complex<double> t = 1.0;
+	double t = 1.0;
 
 	//Create model and set up hopping parameters
 	Model model;
-	for(int x = 0; x < SIZE_X; x++){
-		for(int y = 0; y < SIZE_Y; y++){
-			for(int s = 0; s < 2; s++){
-				//Add hopping amplitudes corresponding to chemical potential
-				model << HoppingAmplitude(
-					 mu,
-					{x, y, s},
-					{x, y, s}
-				);
-
-				//Add hopping parameters corresponding to t
-				if(x+1 < SIZE_X){
-					model << HoppingAmplitude(
-						-t,
-						{(x+1)%SIZE_X,	y,	s}, // periodic boundary conditions
-						{x,		y,	s}
-					) + HC;
-				}
-				if(y+1 < SIZE_Y){
-					model << HoppingAmplitude(
-						-t,
-						{x,	(y+1)%SIZE_Y,	s}, // periodic boundary conditions
-						{x,	y,		s}
-					) + HC;
-				}
-			}
-		}
-	}
+	for(int x = 0; x < SIZE_X; x++) 		//Add hopping parameters corresponding to t
+		if(x+1 < SIZE_X)
+			model << HoppingAmplitude(-t,{x+1,0,0},{x,0,0}) + HC;
+		
+	
 	//Construct model
 	model.construct();
 
 	//Set up the geometry.
 	model.createGeometry(3);
 	Geometry *geometry = model.getGeometry();
-	for(int x = 0; x < SIZE_X; x++){
-		for(int y = 0; y < SIZE_Y; y++){
-			for(int s = 0; s < 2; s++){
-				geometry->setCoordinates(
-					{x, y, s},
-					{(double)x, (double)y, 0}
-				);
-			}
-		}
-	}
-
+	for(int x = 0; x < SIZE_X; x++)
+		geometry->setCoordinates( {x,0,0}, {(double)x,0,0} );
+			
+		
 	//Generate the operator. The second argument is the direction of
 	//interest.
-	IndexedDataTree<complex<double>> customOperator
-		= generateVelocityOperator(model, {1, 0, 0});
+	std::cout<<"Computing velocity operator"<<std::endl;
+	IndexedDataTree<complex<double>> customOperator = generateVelocityOperator(model, {1, 0, 0});//CHECK AND WORK
 
 	//Run the calculation.
-	const double BAND_WIDTH = 5;
-	const double BAND_CENTER = 0;
-	const int M0=1;
-	const int M1=1;
+	const double BAND_WIDTH  = 8.0*t;
+	const double BAND_CENTER = 0.0*t;
+	const int M0=10;
+	const int M1=10;
+	std::cout<<"Computing Chebyshev moments"<<std::endl;
 	kuboCalculation(model, customOperator, BAND_WIDTH, BAND_CENTER, M0, M1);
 
 	return 0;

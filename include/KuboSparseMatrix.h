@@ -27,6 +27,7 @@
 
 #include <complex>
 #include <vector>
+#include <iostream>
 
 namespace TBTK{
 
@@ -44,6 +45,28 @@ public:
 	ComplexVector operator*(const ComplexVector &rhs);
 
 	void rescale(const std::complex<double> &scaleFactor);
+	
+	int numCols()
+	{
+		return numColumns;
+	}
+
+
+	size_t num_nonzeros()
+	{
+		return values.size();
+	}
+	
+	void print()
+	{
+		std::cout<<"Pointer to columns"<<std::endl;
+		for(int i = 0; i < this->numCols()+1; i++)
+			std::cout<<" "<<columnPointers[i]<<" ";
+		std::cout<<"\nMatrix rows and values"<<std::endl;
+		for(size_t i = 0; i < this->num_nonzeros(); i++)
+			std::cout<<rows[i]<<" "<<values[i]<<std::endl;
+	}
+	
 private:
 	unsigned int numRows;
 	unsigned int numColumns;
