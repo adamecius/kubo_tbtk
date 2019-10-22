@@ -26,6 +26,7 @@
 #include "TBTK/Property/DOS.h"
 #include "TBTK/PropertyExtractor/Diagonalizer.h"
 #include "TBTK/PropertyExtractor/ChebyshevExpander.h"
+#include "TBTK/Timer.h"
 #include "TBTK/Vector3d.h"
 
 #include "ComplexVector.h"
@@ -44,7 +45,8 @@ void swap(ComplexVector& x, ComplexVector& y){
 	y = std::move(temp);
 };
 
-IndexedDataTree<complex<double>> generateVelocityOperator(
+//IndexedDataTree<complex<double>> generateVelocityOperator(
+vector<tuple<complex<double>, Index>> generateVelocityOperator(
 	const Model &model,
 	const Vector3d &direction
 ){
@@ -66,7 +68,8 @@ IndexedDataTree<complex<double>> generateVelocityOperator(
 	);
 
 	//Create the velocity operator.
-	IndexedDataTree<complex<double>> velocityOperator;
+//	IndexedDataTree<complex<double>> velocityOperator;
+	vector<tuple<complex<double>, Index>> velocityOperator;
 
 	//Iterate over all HoppingAmplitudes.
 	const HoppingAmplitudeSet &hoppingAmplitudeSet
@@ -103,14 +106,15 @@ IndexedDataTree<complex<double>> generateVelocityOperator(
 			continue;
 
 		//Add the value to the velocity operator.
-		try{
+/*		try{
 			//Try to add it to an already existing entry.
 			velocityOperator.get({to, from}) += operatorValue;
 		}
 		catch(ElementNotFoundException e){
 			//Create a new entry if it fails.
 			velocityOperator.add(operatorValue, {to, from});
-		}
+		}*/
+		velocityOperator.push_back(make_tuple(operatorValue, Index({to, from})));
 	}
 
 	return velocityOperator;
@@ -128,7 +132,8 @@ KuboSparseMatrix convertModelToKuboSparseMatrix(const Model &model){
 }
 
 SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
-	const IndexedDataTree<complex<double>> &indexedDataTree,
+//	const IndexedDataTree<complex<double>> &indexedDataTree,
+	const vector<tuple<complex<double>, Index>> &indexedDataTree,
 	const Model &model
 ){
 	//Get the HoppingAmplitudeSet.
@@ -144,13 +149,15 @@ SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 
 	//Iterate over all elements in the IndexedDataTree.
 	for(
-		IndexedDataTree<complex<double>>::ConstIterator iterator
+/*		IndexedDataTree<complex<double>>::ConstIterator iterator
 			= indexedDataTree.cbegin();
 		iterator != indexedDataTree.cend();
-		++iterator
+		++iterator*/
+		unsigned int n = 0; n < indexedDataTree.size(); n++
 	){
 		//Get the Index of the current element.
-		const Index &index = iterator.getCurrentIndex();
+//		const Index &index = iterator.getCurrentIndex();
+		const Index &index = get<1>(indexedDataTree[n]);
 
 		//Split Indices such as {{x, y, s}, {x', y', s'}} into the two
 		//components {x, y, s} and {x', y', s'}. Assert that two
@@ -171,8 +178,8 @@ SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 		int column = hoppingAmplitudeSet.getBasisIndex(components[1]);
 
 		//Add te element to the SparseMatrix.
-		sparseMatrix.add(row, column, *iterator);
-		std::cout<<row<<" "<<column<<" "<<*iterator<<std::endl;
+		sparseMatrix.add(row, column, get<0>(indexedDataTree[n]));
+		std::cout<<row<<" "<<column<<" "<< get<0>(indexedDataTree[n])<<std::endl;
 	}
 
 	//Construct the SparseMatrix internal CSC representation.
@@ -182,7 +189,8 @@ SparseMatrix<complex<double>> convertIndexedDataTreeToSparseMatrix(
 }
 
 KuboSparseMatrix convertIndexedDataTreeToKuboSparseMatrix(
-	const IndexedDataTree<complex<double>> &indexedDataTree,
+//	const IndexedDataTree<complex<double>> &indexedDataTree,
+	const vector<tuple<complex<double>, Index>> &indexedDataTree,
 	const Model &model
 ){
 	SparseMatrix<complex<double>> sparseMatrix
@@ -207,7 +215,8 @@ ComplexVector generateRandomPhaseVector(unsigned int basisSize){
 
 void kuboCalculation(
 	const Model &model,
-	const IndexedDataTree<complex<double>> targetOperator,
+//	const IndexedDataTree<complex<double>> targetOperator,
+	const vector<tuple<complex<double>, Index>> &targetOperator,
 	double bandWidth,
 	double bandCenter,
 	int M0,
@@ -271,34 +280,41 @@ void kuboCalculation(
 
 int main(int argc, char **argv)
 {
+	Timer::tick("Full calculation");
 	//Lattice size
-	const int SIZE_X = 100;
+	const int SIZE_X = 1000000;
 
 	//Parameters
 	double t = 1.0;
 
+	Timer::tick("Create Model");
 	//Create model and set up hopping parameters
 	Model model;
 	for(int x = 0; x < SIZE_X; x++) 		//Add hopping parameters corresponding to t
 		if(x+1 < SIZE_X)
 			model << HoppingAmplitude(-t,{x+1,0,0},{x,0,0}) + HC;
-		
-	
+
 	//Construct model
 	model.construct();
+	Timer::tock();
 
+	Timer::tick("Create Geometry");
 	//Set up the geometry.
 	model.createGeometry(3);
 	Geometry *geometry = model.getGeometry();
 	for(int x = 0; x < SIZE_X; x++)
 		geometry->setCoordinates( {x,0,0}, {(double)x,0,0} );
-			
-		
+	Timer::tock();
+
+	Timer::tick("Create velocity operator");
 	//Generate the operator. The second argument is the direction of
 	//interest.
 	std::cout<<"Computing velocity operator"<<std::endl;
-	IndexedDataTree<complex<double>> customOperator = generateVelocityOperator(model, {1, 0, 0});//CHECK AND WORK
+//	IndexedDataTree<complex<double>> customOperator = generateVelocityOperator(model, {1, 0, 0});//CHECK AND WORK
+	vector<tuple<complex<double>, Index>> customOperator = generateVelocityOperator(model, {1, 0, 0});//CHECK AND WORK
+	Timer::tock();
 
+	Timer::tick("Calculate");
 	//Run the calculation.
 	const double BAND_WIDTH  = 8.0*t;
 	const double BAND_CENTER = 0.0*t;
@@ -306,6 +322,7 @@ int main(int argc, char **argv)
 	const int M1=10;
 	std::cout<<"Computing Chebyshev moments"<<std::endl;
 	kuboCalculation(model, customOperator, BAND_WIDTH, BAND_CENTER, M0, M1);
+	Timer::tock();
 
 	return 0;
 }
