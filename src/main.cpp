@@ -26,6 +26,7 @@
 #include "TBTK/Property/DOS.h"
 #include "TBTK/PropertyExtractor/Diagonalizer.h"
 #include "TBTK/PropertyExtractor/ChebyshevExpander.h"
+#include "TBTK/TBTK.h"
 #include "TBTK/Timer.h"
 #include "TBTK/Vector3d.h"
 
@@ -51,19 +52,12 @@ vector<tuple<complex<double>, Index>> generateVelocityOperator(
 	const Vector3d &direction
 ){
 	//Get the Geometry from the model.
-	const Geometry *geometry = model.getGeometry();
+	const Geometry &geometry = model.getGeometry();
 	TBTKAssert(
-		geometry != nullptr,
-		"generateVelocityOperator()",
-		"The model contains no Geometry.",
-		"Use model.createGeometry() to create a geometry and"
-		<< " geometry->setCoordinates() to set the coordinates."
-	);
-	TBTKAssert(
-		geometry->getDimensions() == 3,
+		geometry.getDimensions() == 3,
 		"generateVelocityOperator()",
 		"The geometry dimension must have dimension '3' but has"
-		<< " dimension '" << geometry->getDimensions() << "'.",
+		<< " dimension '" << geometry.getDimensions() << "'.",
 		""
 	);
 
@@ -82,17 +76,11 @@ vector<tuple<complex<double>, Index>> generateVelocityOperator(
 		complex<double> amplitude = (*iterator).getAmplitude();
 		const Index to = (*iterator).getToIndex();
 		const Index from = (*iterator).getFromIndex();
-		
+
 		//Get the coordinates corresponding to the to- and from-Indices
 		//and vonvert them to Vector3d.
-		const double *toCoordinates = geometry->getCoordinates(to);
-		Vector3d toR = Vector3d(
-			{toCoordinates[0], toCoordinates[1], toCoordinates[2]}
-		);
-		const double *fromCoordinates = geometry->getCoordinates(from);
-		Vector3d fromR = Vector3d(
-			{fromCoordinates[0], fromCoordinates[1], fromCoordinates[2]}
-		);
+		Vector3d toR = Vector3d(geometry.getCoordinate(to));
+		Vector3d fromR = Vector3d(geometry.getCoordinate(from));
 
 		//Calculate H_{ij}(direction.(R_i - R_j)).
 		complex<double> i(0,1);
@@ -280,6 +268,9 @@ void kuboCalculation(
 
 int main(int argc, char **argv)
 {
+	//Initialize TBTK.
+	Initialize();
+
 	Timer::tick("Full calculation");
 	//Lattice size
 	const int SIZE_X = 1000000;
@@ -300,10 +291,9 @@ int main(int argc, char **argv)
 
 	Timer::tick("Create Geometry");
 	//Set up the geometry.
-	model.createGeometry(3);
-	Geometry *geometry = model.getGeometry();
+	Geometry &geometry = model.getGeometry();
 	for(int x = 0; x < SIZE_X; x++)
-		geometry->setCoordinates( {x,0,0}, {(double)x,0,0} );
+		geometry.setCoordinate({x,0,0}, {(double)x,0,0} );
 	Timer::tock();
 
 	Timer::tick("Create velocity operator");
